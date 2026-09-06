@@ -1,8 +1,8 @@
 import {
   Before, After, BeforeAll, AfterAll, Status, setDefaultTimeout, ITestCaseHookParameter,
 } from '@cucumber/cucumber';
-import { PlaywrightWorld } from './world.js';
-import { scenarioLogger } from './logger.js';
+import { PlaywrightWorld } from '../world.js';
+import { scenarioLogger } from '../logger.js';
 
 setDefaultTimeout(60_000);
 

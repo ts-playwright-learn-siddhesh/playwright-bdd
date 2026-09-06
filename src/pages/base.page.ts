@@ -9,6 +9,7 @@ export const UI_TIMEOUT = Number(process.env.UI_TIMEOUT) || 15_000;
  *  on the live site while scaffolding. Add entries as new page names appear. */
 export const PAGE_PATHS: Record<string, string> = {
   "Enter Account Information": "/signup",
+  "Signup Login": "/login",
   "home": "/",
 };
 
