@@ -90,14 +90,20 @@ isn't prompted for each one.
 ## File ownership (the #1 team hazard is two teammates editing one file)
 
 ```
-<feature-dir>/*.feature          -> feature-author        (step-implementer: READ ONLY)
-<pages-dir>/*.page.ts            -> step-implementer
-<steps-dir>/*.steps.ts          -> step-implementer
-<support-dir>/world.ts, hooks.ts -> step-implementer
-<support-dir>/logger.ts          -> step-implementer (via add-logger)
-cucumber.js / cucumber.cjs       -> step-implementer
-.claude/.scratch/**              -> whichever skill writes it (gitignored, per-repo)
+<feature-dir>/*.feature              -> feature-author    (step-implementer: READ ONLY)
+<pages-dir>/*.page.ts                -> step-implementer
+<steps-dir>/*.steps.ts              -> step-implementer
+<support-dir>/world.ts, hooks/*.ts   -> step-implementer
+<support-dir>/logger.ts              -> step-implementer (via add-logger)
+cucumber.js / cucumber.cjs           -> step-implementer
+.claude/.scratch/**                  -> whichever skill writes it (gitignored, per-repo)
 ```
+
+Cross-browser + parallel are config, not code: the emitted `cucumber.js`
+reads `PARALLEL` (worker count, default 2) and `BROWSER` (engine, keys the
+report dir) from the env, `world.ts` validates `BROWSER`, `logger.ts` tags
+the log file per browser+worker, and the CI workflow is a 3-engine matrix.
+Run locally with `npm run test:firefox` / `test:all` / `PARALLEL=0 …`.
 
 The suite-runner writes nothing. The lead hand-merges the page-object
 index if features arrive in two waves (`scaffold.mjs` writes that file
@@ -154,7 +160,7 @@ On a **fresh** scaffold the step-implementer runs `write-step-defs`
 **first** (it creates the World + hooks), then `add-logger` **second** —
 `add-logger` against a repo with no World falls back to a module-level
 logger with no `this.log` wiring. On an **established** project the order
-doesn't matter. Both skills edit `world.ts` / `hooks.ts`, so the
+doesn't matter. Both skills edit `world.ts` / the hooks, so the
 step-implementer runs one to completion before the other, never
 interleaved. Its role card already encodes this; the lead just shouldn't
 split logging into a separate teammate.

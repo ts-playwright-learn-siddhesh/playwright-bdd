@@ -10,14 +10,15 @@
  *   - package.json (written when the project has none) with the dev-deps
  *     (@cucumber/cucumber@13, @playwright/test, @types/node, tsx,
  *     typescript@next + @typescript/native-preview for TS 7, winston,
- *     @colors/colors) and placeholder scripts
- *   - chromium installed
+ *     @colors/colors, cross-env, npm-run-all) plus placeholder + per-engine
+ *     (test:chromium/firefox/webkit/all) scripts
+ *   - chromium + firefox + webkit installed
  *   - tsconfig.json (TS 7: module/moduleResolution nodenext, paths not
  *     baseUrl, for the step defs / page objects)
  *   - .vscode/settings.json + .vscode/extensions.json (editor + current
  *     cucumberautocomplete keys only)
  *   - .gitignore covering the generated / output dirs
- *   - a GitHub Actions workflow (opt-out with --no-ci)
+ *   - a GitHub Actions workflow — a 3-engine matrix (opt-out with --no-ci)
  *
  * It writes NOTHING that write-step-defs owns:
  *   - cucumber.js / cucumber.cjs           -> scaffold.mjs --emit
@@ -168,6 +169,9 @@ const hasTypesNode = '@types/node' in deps || existsSync(p('node_modules/@types/
 const hasWinston = 'winston' in deps || existsSync(p('node_modules/winston'));
 const hasColors = '@colors/colors' in deps || existsSync(p('node_modules/@colors/colors'));
 
+const hasCrossEnv = 'cross-env' in deps || existsSync(p('node_modules/cross-env'));
+const hasNpmRunAll = 'npm-run-all' in deps || existsSync(p('node_modules/npm-run-all'));
+
 const toInstall = [];
 if (!hasCucumber) toInstall.push('@cucumber/cucumber@13');
 if (!hasPlaywright) toInstall.push('@playwright/test');
@@ -176,6 +180,8 @@ if (!hasTypescript) toInstall.push('typescript');
 if (!hasTypesNode) toInstall.push('@types/node');
 if (!hasWinston) toInstall.push('winston');
 if (!hasColors) toInstall.push('@colors/colors');
+if (!hasCrossEnv) toInstall.push('cross-env');
+if (!hasNpmRunAll) toInstall.push('npm-run-all');
 if (!hasPkg) {
   // package.json is written by this script with the dev-deps already listed —
   // a plain install pulls them from it, no `npm init` and no `npm i -D` needed.
@@ -183,7 +189,8 @@ if (!hasPkg) {
 } else if (toInstall.length) {
   installCmds.push(`${pmAdd} ${toInstall.join(' ')}`);
 }
-installCmds.push(`${pmRun} playwright install chromium`);
+// All three engines — the suite runs cross-browser via BROWSER= / the CI matrix.
+installCmds.push(`${pmRun} playwright install chromium firefox webkit`);
 
 // --- tsconfig
 files.push({
@@ -257,6 +264,8 @@ console.log(`typescript        : ${hasTypescript ? 'present' : 'MISSING — will
 console.log(`@types/node        : ${hasTypesNode ? 'present' : 'MISSING — will install'}`);
 console.log(`winston           : ${hasWinston ? 'present' : 'MISSING — will install (used by add-logger)'}`);
 console.log(`@colors/colors     : ${hasColors ? 'present' : 'MISSING — will install (used by add-logger)'}`);
+console.log(`cross-env         : ${hasCrossEnv ? 'present' : 'MISSING — will install (portable BROWSER= in scripts)'}`);
+console.log(`npm-run-all       : ${hasNpmRunAll ? 'present' : 'MISSING — will install (run-s / run-p for test:all*)'}`);
 console.log(`package.json      : ${hasPkg ? 'present — kept' : 'none — will create'}`);
 console.log(`tsconfig.json     : ${hasTsconfig ? 'present — kept' : 'none — will create'}`);
 console.log(`.vscode/settings.json : ${hasVscodeSettings ? 'present — kept' : 'none — will create'}`);
@@ -304,7 +313,8 @@ if (notes.length) {
 
 console.log('\nVerify (after install):');
 console.log(`  $ ${pmRun} tsc -p tsconfig.json --noEmit   # tsconfig compiles (bare 'tsc' on TS 7 prints CLI help)`);
-console.log(`  $ ${pmRun} playwright --version             # playwright + browser present`);
+console.log(`  $ ${pmRun} playwright --version             # playwright present`);
+console.log(`  $ ${pmRun} playwright install --dry-run     # chromium + firefox + webkit downloaded`);
 console.log(`  (fresh scaffold: TS18003 'No inputs were found' is expected — src/ dirs`);
 console.log(`   don't exist until write-step-defs emits the suite. Any other tsc error is real.)`);
 
@@ -336,9 +346,16 @@ function packageJsonTemplate() {
       // safe placeholders so `npm run` lists something meaningful meanwhile.
       test: 'npm run cucumberTs',
       cucumberTs: 'echo "run write-step-defs (scaffold.mjs --emit) to generate the suite" && exit 1',
+      // Per-engine wrappers (cross-env so BROWSER= works on Windows too).
+      // test:all runs them sequentially; test:all:parallel concurrently.
+      'test:chromium': 'cross-env BROWSER=chromium npm run cucumberTs',
+      'test:firefox': 'cross-env BROWSER=firefox npm run cucumberTs',
+      'test:webkit': 'cross-env BROWSER=webkit npm run cucumberTs',
+      'test:all': 'run-s test:chromium test:firefox test:webkit',
+      'test:all:parallel': 'run-p test:chromium test:firefox test:webkit',
       // tsgo (TS 7 native) when present, classic tsc as fallback.
       'type-check': 'tsgo --noEmit || tsc -p tsconfig.json --noEmit',
-      'pw:install': 'playwright install chromium',
+      'pw:install': 'playwright install chromium firefox webkit',
     },
     devDependencies: {
       '@colors/colors': '^1.6.0',
@@ -349,6 +366,10 @@ function packageJsonTemplate() {
       // tsc + tsserver + editor language service working, while
       // @typescript/native-preview provides the Go-native `tsgo` binary.
       '@typescript/native-preview': 'latest',
+      // cross-env: portable BROWSER=/PARALLEL= in the npm scripts (Windows).
+      // npm-run-all: run-s / run-p for the test:all* scripts.
+      'cross-env': '^10.1.0',
+      'npm-run-all': '^4.1.5',
       tsx: '^4.19.0',
       typescript: 'next',
       winston: '^3.14.0',
@@ -439,12 +460,13 @@ function tsconfigTemplate() {
 }
 
 function ciTemplate() {
+  const runPm = pm === 'npm' ? 'npm' : pm;
   return `name: BDD
 
-# Runs the Cucumber-BDD suite. This assumes the suite has already been
-# generated by the write-step-defs skill (cucumber config + world.ts +
-# hooks.ts + page objects + step defs) and that package.json has a
-# "cucumberTs" script — scaffold.mjs --emit writes both.
+# Runs the Cucumber-BDD suite once per Playwright engine (matrix), each job
+# with PARALLEL workers and the ci profile (retry 1). Assumes write-step-defs
+# has run (cucumber config + world.ts + hooks + page objects + step defs) and
+# package.json has a "cucumberTs" script.
 
 on:
   push:
@@ -455,19 +477,29 @@ jobs:
   bdd:
     timeout-minutes: 30
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    name: bdd (\${{ matrix.browser }})
+    env:
+      BROWSER: \${{ matrix.browser }}
+      PARALLEL: 2
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
 ${pm === 'pnpm' ? '      - uses: pnpm/action-setup@v4\n' : ''}      - run: ${pmCi}
-      - run: ${pmRun} playwright install --with-deps chromium
-      - run: ${pm === 'npm' ? 'npm' : pm} run cucumberTs -- --profile ci
+      - run: ${pmRun} playwright install --with-deps \${{ matrix.browser }}
+      - run: ${runPm} run cucumberTs -- --profile ci
       - uses: actions/upload-artifact@v4
         if: ${'${{ !cancelled() }}'}
         with:
-          name: cucumber-report
-          path: reports/
+          name: cucumber-report-\${{ matrix.browser }}
+          path: |
+            reports/\${{ matrix.browser }}/
+            logs/
           retention-days: 7
 `;
 }

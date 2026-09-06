@@ -205,13 +205,9 @@ export class RegistrationPage extends BasePage {
    * Step 2 (negative) — the "Enter Account Information" form on /signup, but
    * with `blankField` deliberately left empty. Fills every other field from
    * `fields`, leaves `blankField` untouched (so the browser's own
-   * required-field constraint fires), then clicks "Create Account". Does not
-   * return a submission snapshot — nothing is created; the caller stashes
-   * `blankField` on the World and the later assertion reads the field's real
-   * `validationMessage` back.
-   *
-   * `blankField` is a .feature data-table key ("password", "first name",
-   * "mobile number", …), mapped to its Locator via `fieldByKey`.
+   * required-field constraint fires), then clicks "Create Account". Nothing is
+   * created; the caller stashes `blankField` on the World for the assertion.
+   * `blankField` is a .feature data-table key, mapped via `fieldByKey`.
    */
   async theVisitorSubmitsTheAccountInformationFormWithLeftBlank(
     fields: Record<string, string>,
@@ -293,15 +289,13 @@ export class RegistrationPage extends BasePage {
   }
 
   /**
-   * Assert the browser's native constraint-validation bubble on `fieldKey`
-   * reads exactly `message` (e.g. "Please fill out this field." for a blank
-   * required field, or the type-mismatch text for a malformed e-mail).
-   * Reads `element.validationMessage` off the real input — the same string
-   * the browser would show in its bubble — rather than any page-rendered
-   * text, because automationexercise.com renders none for these cases.
-   *
-   * `fieldKey` is a .feature data-table key; `fieldByKey()` maps it (plus the
-   * two signup-block keys "name" / "email") to its Locator.
+   * Assert `fieldKey` is failing HTML5 constraint validation — via the field's
+   * `validity` flags, not the `validationMessage` string, which varies by
+   * engine/version. `message` (from the .feature) names the expected failure
+   * and picks the flag: an "@"/email mention -> typeMismatch (checked first,
+   * so "missing an '@'" reads as a format error); a fill-out/required/blank
+   * phrase -> valueMissing; anything else -> !validity.valid.
+   * `fieldKey` is a .feature data-table key, mapped via `fieldByKey()`.
    */
   async expectFieldValidationMessage(fieldKey: string, message: string): Promise<void> {
     const key = fieldKey.trim();
@@ -309,19 +303,30 @@ export class RegistrationPage extends BasePage {
     if (!loc) {
       throw new Error(`no locator mapped for field key "${key}" in RegistrationPage.fieldByKey()`);
     }
-    const normalised = message.trim().replace(/\s+/g, ' ');
+
+    const m = message.trim().toLowerCase();
+    const flag: 'valueMissing' | 'typeMismatch' | 'invalid' = /(@|e-?mail)/.test(m)
+      ? 'typeMismatch'
+      : /(fill out this field|required|value missing|blank)/.test(m)
+        ? 'valueMissing'
+        : 'invalid';
+    const expected =
+      flag === 'valueMissing'
+        ? { valueMissing: true }
+        : flag === 'typeMismatch'
+          ? { typeMismatch: true }
+          : { valid: false };
+
     await expect
       .poll(
         () =>
-          loc.evaluate(
-            (el) => (el as HTMLInputElement | HTMLSelectElement).validationMessage ?? '',
-          ),
-        {
-          timeout: UI_TIMEOUT,
-          message: `waiting for ${key}.validationMessage === ${JSON.stringify(normalised)}`,
-        },
+          loc.evaluate((el) => {
+            const v = (el as HTMLInputElement | HTMLSelectElement).validity;
+            return { valueMissing: v.valueMissing, typeMismatch: v.typeMismatch, valid: v.valid };
+          }),
+        { timeout: UI_TIMEOUT, message: `${key} should fail validation (${JSON.stringify(message.trim())})` },
       )
-      .toBe(normalised);
+      .toEqual(expect.objectContaining(expected));
   }
 
   /**

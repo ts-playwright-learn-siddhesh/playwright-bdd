@@ -141,7 +141,15 @@ function buildTransports(runId: string): winston.transport[] {
   ];
 }
 
-const runId = new Date().toISOString().replace(/[:.]/g, '-');
+// The browser and worker tags keep concurrent cross-browser / parallel-worker
+// runs from writing the same file. BROWSER defaults to "chromium";
+// CUCUMBER_WORKER_ID is set only in `cucumber --parallel` workers.
+const browserTag = (process.env.BROWSER ?? 'chromium').trim().toLowerCase() || 'chromium';
+const workerId = process.env.CUCUMBER_WORKER_ID;
+const runId =
+  new Date().toISOString().replace(/[:.]/g, '-') +
+  `-${browserTag}` +
+  (workerId !== undefined ? `-w${workerId}` : '');
 
 // format.errors({ stack: true }) MUST be at the top-level createLogger call,
 // not per-transport — per-transport-only placement silently drops the
@@ -167,8 +175,10 @@ Notes baked into the generated code:
   import avoids).
 - `LOG_LEVEL` defaults to `info` under `CI=true` and `debug` otherwise — set
   `process.env.LOG_LEVEL` to override either way.
-- File transport writes one JSON-lines file per run (`logs/run-<iso>.log`);
-  the console transport stays human-readable and colorized.
+- File transport writes one JSON-lines file per run
+  (`logs/run-<iso>-<browser>[-w<worker>].log` — the browser and worker tags
+  keep concurrent cross-browser / `--parallel` runs from sharing a file); the
+  console transport stays human-readable and colorized.
 - **`format.errors({ stack: true })` MUST sit on the top-level
   `createLogger({ format: ... })` call, never only on a per-transport
   `format`.** Verified: placing it only inside `buildTransports()`'s
@@ -255,7 +265,7 @@ await someStep(this: PlaywrightWorld) {
 | File | Created when | Contents |
 |---|---|---|
 | `<support-dir>/logger.ts` | absent | winston logger: console + file transports, level from `LOG_LEVEL`/`CI`, colorized via `@colors/colors/safe`, `errors({ stack: true })`, `scenarioLogger()` child-logger helper |
-| `<log-dir>/` (e.g. `logs/`) | absent | run log files, `run-<iso>.log` (JSON lines); created at runtime by the logger module itself, not by this skill directly |
+| `<log-dir>/` (e.g. `logs/`) | absent | run log files, `run-<iso>-<browser>[-w<worker>].log` (JSON lines); created at runtime by the logger module itself, not by this skill directly |
 | `.gitignore` entry for the log directory | missing | prevents run logs from being committed |
 | World file edit | a World class exists | adds a `log` field populated per-scenario in `Before`, used from `After` and step definitions |
 
@@ -291,6 +301,13 @@ await someStep(this: PlaywrightWorld) {
   generated module creates it synchronously at import time
   (`fs.mkdirSync(..., { recursive: true })`); don't remove that guard when
   customizing, or the first run on a clean checkout throws `ENOENT`.
+- **Parallel workers share a filename without the worker tag** — under
+  `cucumber --parallel N` each worker is a separate Node process; if the
+  `runId` is just a timestamp, two workers starting in the same millisecond
+  write the same `run-<iso>.log` and interleave JSON lines. The generated
+  `runId` appends `-<browser>` (from `BROWSER`) and `-w<CUCUMBER_WORKER_ID>`
+  (set only in parallel workers) to keep concurrent cross-browser and
+  per-worker runs in separate files. Keep both tags when customizing.
 - **`format.errors({ stack: true })` set only per-transport silently loses
   the error** — confirmed by direct testing against `winston@3.19.0`. A
   top-level `logger.error(new Error('x'))` logs as an empty

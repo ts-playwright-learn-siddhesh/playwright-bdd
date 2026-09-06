@@ -7,6 +7,19 @@ import { PageObjects, buildPageObjects } from '../pages/index.js';
 // point Playwright's getByTestId() at it so the generated locators resolve.
 selectors.setTestIdAttribute("data-qa");
 
+/** Engine selected per run with `BROWSER=<name>` (default `chromium`). */
+export type BrowserName = 'chromium' | 'firefox' | 'webkit';
+const SUPPORTED_BROWSERS: readonly BrowserName[] = ['chromium', 'firefox', 'webkit'];
+
+function resolveBrowserName(raw: string | undefined): BrowserName {
+  if (raw === undefined || raw === '') return 'chromium';
+  const name = raw.trim().toLowerCase();
+  if ((SUPPORTED_BROWSERS as readonly string[]).includes(name)) return name as BrowserName;
+  throw new Error(
+    `BROWSER="${raw}" is not supported. Use one of: ${SUPPORTED_BROWSERS.join(', ')}.`,
+  );
+}
+
 /** Snapshot of the account-information form as it was submitted. Keys mirror
  *  the .feature data-table labels; every value is the exact string typed
  *  into the page (checkbox cells normalised to "checked" / "unchecked",
@@ -50,7 +63,7 @@ export class PlaywrightWorld extends World {
   logger!: winston.Logger;
 
   readonly baseUrl: string;
-  readonly browserName: 'chromium' | 'firefox' | 'webkit';
+  readonly browserName: BrowserName;
   readonly headless: boolean;
 
   /** Scratch state shared between the steps of one scenario. Set in a When,
@@ -91,7 +104,7 @@ export class PlaywrightWorld extends World {
   constructor(options: IWorldOptions) {
     super(options);
     this.baseUrl = process.env.BASE_URL ?? "https://automationexercise.com";
-    this.browserName = (process.env.BROWSER as 'chromium' | 'firefox' | 'webkit') ?? 'chromium';
+    this.browserName = resolveBrowserName(process.env.BROWSER);
     this.headless = process.env.HEADED ? false : true;
   }
 

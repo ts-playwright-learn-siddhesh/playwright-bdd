@@ -61,7 +61,7 @@ Pass the non-default dirs on **every** `scaffold.mjs` call.
 ```bash
 npm install
 npm install -D @faker-js/faker   # unique run-time test data (see "Unique test data" below)
-npx playwright install chromium
+npx playwright install chromium firefox webkit   # all three — the suite runs cross-browser
 ```
 
 `@cucumber/cucumber@13`, `@playwright/test`, `tsx` are already dev-deps.
@@ -240,7 +240,7 @@ the affected `*.page.ts`, re-run `--emit`.
 
 ```bash
 npm run cucumberTs -- --dry-run     # 0 undefined / 0 ambiguous
-npm run cucumberTs                  # real browser against the site
+npm run cucumberTs                  # real browser against the site (chromium)
 ```
 
 Verified this session — all `login.feature` scenarios green:
@@ -251,9 +251,23 @@ Verified this session — all `login.feature` scenarios green:
 29 steps (29 passed)
 ```
 
-HTML report at `reports/cucumber-report.html`. One scenario:
-`-- --name "<name>"`. CI profile (retry + parallel + junit):
-`-- --profile ci`.
+HTML report at `reports/<browser>/cucumber-report.html`. One scenario:
+`-- --name "<name>"`. CI profile (retry + junit): `-- --profile ci`.
+
+**Cross-browser + parallel** (emitted `cucumber.js` reads both from env):
+
+```bash
+npm run test:firefox               # or test:webkit / test:chromium
+npm run test:all                   # 3 engines, sequential
+npm run test:all:parallel          # 3 engines, concurrent (prefixed output)
+PARALLEL=4 npm run cucumberTs       # 4 workers (default 2; 0 = serial)
+PARALLEL=0 npm run cucumberTs -- --name "<n>"   # serial, for debugging
+```
+
+`BROWSER` is validated at World construction — an unknown value throws
+rather than silently falling back to chromium. Reports and logs are keyed
+by browser (`reports/<browser>/`, `logs/run-<iso>-<browser>[-w<worker>].log`)
+so concurrent engines/workers don't collide.
 
 ### Step 6 — confirm the fail-on-disagreement contract
 
@@ -272,7 +286,7 @@ The `After` hook attaches a full-page PNG on any failure.
 
 | File | Created when | Contents |
 |---|---|---|
-| `src/support/world.ts` | absent | `PlaywrightWorld` — browser/context/page/pages, `baseUrl`, `BROWSER`/`HEADED` env switches, `init()`/`destroy()` |
+| `src/support/world.ts` | absent | `PlaywrightWorld` — browser/context/page/pages, `baseUrl`, validated `BROWSER` (chromium/firefox/webkit) + `HEADED` env switches, `init()`/`destroy()` |
 | `src/support/hooks.ts` | absent | 60s timeout, `Before`→init, `After`→screenshot-on-fail + teardown |
 | `src/support/data.ts` | absent | `uniqueEmail(seed?)` + `personName()` — faker-backed, so a hard-coded unique-by-nature value in a `.feature` (registration e-mail, username…) is swapped for a fresh one at run time and re-runs stay green |
 | `cucumber.js` | absent | `default` + `ci` profiles |
@@ -325,12 +339,13 @@ The `After` hook attaches a full-page PNG on any failure.
   See `reference/step-def-standards.md` §4 "Unique test data".
 - **A scenario that needs a value that already exists** (a "duplicate
   e-mail is rejected" case) can't be satisfied by uniquifying. Add a
-  **name-scoped** `Before` in `src/support/<feature>.hooks.ts`:
-  `Before({ name: 'exact scenario name' }, async function () { … })` that
-  creates the record through the real UI and pins it
-  (`this.forcedSignupEmail = …`); the signup step submits that verbatim.
-  This file loads after `hooks.ts` (so `this.init()` has run) because
-  `hooks.ts` sorts before `<feature>.hooks.ts`.
+  `Before` in `src/support/<feature>.hooks.ts` that creates the record
+  through the real UI and pins it (`this.forcedSignupEmail = …`); the
+  signup step submits that verbatim. **`Before({ name })` does not scope a
+  hook** (it only labels it) — write a plain `Before(fn)` whose first line
+  is `if (scenario.pickle?.name !== 'exact scenario name') return;`. This
+  file loads after `hooks.ts` / `global.hooks.ts` (so `this.init()` has
+  run) because those sort before `<feature>.hooks.ts`.
 
 ## Troubleshooting
 
@@ -345,7 +360,8 @@ The `After` hook attaches a full-page PNG on any failure.
 | scenario fails on a `Then` you expected to pass | the `.feature`'s expectation doesn't match the real site — fix the feature or the app |
 | green on 1st run, fails on 2nd with "already exists" | a hard-coded unique value is submitted verbatim — route it through `uniqueEmail()` in the `When` step (see Gotchas) |
 | `Cannot find module '@faker-js/faker'` | `npm install -D @faker-js/faker` |
-| `Executable doesn't exist … chromium` | `npx playwright install chromium` |
+| `Executable doesn't exist … <browser>` | `npx playwright install chromium firefox webkit` |
+| `BROWSER="…" is not supported` | typo in the `BROWSER` env value — use `chromium`, `firefox`, or `webkit` |
 
 ## Runs alongside `add-logger`?
 

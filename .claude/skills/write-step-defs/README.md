@@ -44,7 +44,7 @@ writes `selmap.json`, runs `--emit`, runs the suite.
 
 ```bash
 npm install
-npx playwright install chromium
+npx playwright install chromium firefox webkit   # the suite runs cross-browser
 ```
 
 `@cucumber/cucumber@13`, `@playwright/test`, `tsx` are already dev-deps.
@@ -110,12 +110,12 @@ those instead.
 
 | File | Location | Committed? | Notes |
 |---|---|---|---|
-| `world.ts`, `hooks.ts` | support dir | Yes | Browser lifecycle + custom World. Created once. |
-| `cucumber.js` / `cucumber.cjs` | repo root | Yes | Run profiles (`.cjs` when `package.json` is `"type": "module"`). Also sets a `cucumberTs` `package.json` script if one isn't already customised. |
+| `world.ts`, `hooks.ts` | support dir | Yes | Browser lifecycle + custom World; validated `BROWSER` engine select. Created once. |
+| `cucumber.js` / `cucumber.cjs` | repo root | Yes | Run profiles (`.cjs` when `package.json` is `"type": "module"`). `parallel` from `PARALLEL` env, report dir from `BROWSER`. Also sets a `cucumberTs` `package.json` script if one isn't already customised. |
 | `base.page.ts`, `index.ts` | pages dir | Yes | Base + registry; `PAGE_PATHS` from `selmap.pagePaths` + observed URLs. |
 | `<feature>.page.ts` | pages dir | Yes | Real selectors baked in from the selmap. Reused, not regenerated, if it already exists. |
 | `<feature>.steps.ts` | steps dir | Yes | `async function` step defs; `Then` bodies assert the `.feature` verbatim. Not written if every step is already defined elsewhere. |
-| `reports/cucumber-report.html` | `reports/` | No (gitignore) | HTML run report. |
+| `reports/<browser>/cucumber-report.html` | `reports/` | No (gitignore) | HTML run report, per browser. |
 
 ## Run commands
 
@@ -123,10 +123,15 @@ Use whatever `package.json` script the project runs the BDD suite with —
 `scaffold.mjs` names it `cucumberTs` if it created it:
 
 ```bash
-npm run cucumberTs                       # whole suite
+npm run cucumberTs                       # whole suite (chromium)
 npm run cucumberTs -- --dry-run          # bind check: 0 undefined / 0 ambiguous
 npm run cucumberTs -- --name "<name>"    # one scenario
-npm run cucumberTs -- --profile ci       # retry + parallel + junit
+npm run cucumberTs -- --profile ci       # retry + junit
+
+npm run test:firefox                     # one other engine (test:webkit / test:chromium)
+npm run test:all                         # 3 engines, sequential
+npm run test:all:parallel               # 3 engines, concurrent
+PARALLEL=4 npm run cucumberTs            # worker count (default 2; 0 = serial)
 ```
 
 > That script invokes
