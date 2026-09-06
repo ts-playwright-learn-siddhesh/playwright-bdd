@@ -1,0 +1,24 @@
+{
+  "name": "playwright-bdd",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Playwright + Cucumber-BDD + TypeScript suite",
+  "type": "commonjs",
+  "scripts": {
+    "test": "npm run cucumberTs",
+    "cucumberTs": "node --import tsx node_modules/@cucumber/cucumber/bin/cucumber.js",
+    "type-check": "tsgo --noEmit || tsc -p tsconfig.json --noEmit",
+    "pw:install": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@colors/colors": "^1.6.0",
+    "@cucumber/cucumber": "^13.0.0",
+    "@faker-js/faker": "^10.6.0",
+    "@playwright/test": "^1.47.0",
+    "@types/node": "^22.0.0",
+    "@typescript/native-preview": "latest",
+    "tsx": "^4.19.0",
+    "typescript": "next",
+    "winston": "^3.14.0"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "_comment": "REFERENCE ONLY — this file is never read by scaffold.mjs. It shows the shape of the selmap.json you produce by driving the live site. Write the real one to .claude/.scratch/write-step-defs/selmap.json (gitignored, per-repo). The values below are an illustrative saucedemo-style example.",
+
+  "testIdAttribute": "data-qa",
+
+  "pages": {
+    "LoginPage": {
+      "url": "/",
+      "fields": {
+        "user-name": { "placeholder": "Username" },
+        "password": { "label": "Password" },
+        "otp": { "testId": "otp-code" },
+        "legacy": ".no-a11y-hook"
+      },
+      "submit": {
+        "theShopperSubmitsTheLoginForm": { "role": "button", "name": "Login" }
+      }
+    }
+  },
+
+  "pagePaths": {
+    "login": "/",
+    "inventory": "/inventory.html"
+  }
+}
