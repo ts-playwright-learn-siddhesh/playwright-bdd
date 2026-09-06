@@ -114,7 +114,11 @@ export class RegistrationPage extends BasePage {
 
   /**
    * Step 1 — the "New User Signup!" block on /login.
-   * `fields` carries the fresh name + email the step generated.
+   * `fields` carries the name + email the step resolved (a fresh
+   * `uniqueEmail()` for a positive run, the pinned duplicate address for the
+   * "already exists" scenario, or a literal bad / blank value for the other
+   * negatives). A blank cell is filled as "" so the browser's own
+   * required-field validation fires — that is the behaviour under test.
    */
   async theVisitorStartsASignupInTheBlock(fields: Record<string, string>): Promise<void> {
     if ('name' in fields) await this.fName.fill(fields['name']);
@@ -198,6 +202,36 @@ export class RegistrationPage extends BasePage {
   }
 
   /**
+   * Step 2 (negative) — the "Enter Account Information" form on /signup, but
+   * with `blankField` deliberately left empty. Fills every other field from
+   * `fields`, leaves `blankField` untouched (so the browser's own
+   * required-field constraint fires), then clicks "Create Account". Does not
+   * return a submission snapshot — nothing is created; the caller stashes
+   * `blankField` on the World and the later assertion reads the field's real
+   * `validationMessage` back.
+   *
+   * `blankField` is a .feature data-table key ("password", "first name",
+   * "mobile number", …), mapped to its Locator via `fieldByKey`.
+   */
+  async theVisitorSubmitsTheAccountInformationFormWithLeftBlank(
+    fields: Record<string, string>,
+    blankField: string,
+  ): Promise<void> {
+    await this.dismissAdOverlay();
+    const key = blankField.trim();
+    const get = (k: string) => (k in fields ? fields[k] : '');
+
+    // Fill every provided field EXCEPT the one to leave blank.
+    for (const [k, loc] of Object.entries(this.fieldByKey())) {
+      if (k === key || !(k in fields)) continue;
+      if (k === 'country') await loc.selectOption(get(k));
+      else await loc.fill(get(k));
+    }
+
+    await this.safeClick(this.createAccountButton);
+  }
+
+  /**
    * Assert the account-created confirmation is visible. The .feature spells
    * the message "ACCOUNT CREATED!" (the on-screen, CSS-uppercased form); the
    * DOM node's text is "Account Created!". Match case-insensitively against
@@ -210,6 +244,108 @@ export class RegistrationPage extends BasePage {
     await expect(this.accountCreatedHeading).toHaveText(new RegExp(escapeRegExp(normalised), 'i'), {
       timeout: UI_TIMEOUT,
     });
+  }
+
+  /**
+   * Assert the site rendered its own "Email Address already exist!" error
+   * inside the "New User Signup!" block. Captured live: automationexercise.com
+   * re-renders the block on /signup with `<p style="color: red;">Email Address
+   * already exist!</p>` and does NOT show the account-information form. The
+   * message text is compared verbatim (whitespace-normalised).
+   */
+  async expectSignupBlockError(message: string): Promise<void> {
+    const normalised = message.trim().replace(/\s+/g, ' ');
+    const banner = this.page
+      .locator('.signup-form p')
+      .filter({ hasText: new RegExp(escapeRegExp(normalised), 'i') });
+    await expect(banner.first()).toBeVisible({ timeout: UI_TIMEOUT });
+  }
+
+  /**
+   * Assert the visitor never reached the "Enter Account Information" form.
+   * The URL alone is not enough — after a duplicate-e-mail submit the site
+   * lands on /signup yet re-renders the signup *block*, not the account form.
+   * Assert on the form control's absence instead.
+   */
+  async expectAccountInfoFormNotReached(): Promise<void> {
+    await expect(this.createAccountButton).toHaveCount(0, { timeout: UI_TIMEOUT });
+  }
+
+  /**
+   * Assert the "New User Signup!" submission was blocked client-side and the
+   * page did not navigate away from /login. Captured live: an empty or
+   * malformed e-mail (or an empty name) keeps the browser on /login with the
+   * signup block still mounted.
+   */
+  async expectStillOnSignupBlockPage(): Promise<void> {
+    await expect(this.page).toHaveURL(/\/login(\?|#|$)/, { timeout: UI_TIMEOUT });
+    await expect(this.signupButton).toBeVisible({ timeout: UI_TIMEOUT });
+  }
+
+  /**
+   * Assert the account-information form did not submit — still on /signup
+   * with the "Create Account" button mounted. Captured live: leaving any
+   * required field blank keeps the browser on /signup.
+   */
+  async expectStillOnAccountInfoPage(): Promise<void> {
+    await expect(this.page).toHaveURL(/\/signup(\?|#|$)/, { timeout: UI_TIMEOUT });
+    await expect(this.createAccountButton).toBeVisible({ timeout: UI_TIMEOUT });
+  }
+
+  /**
+   * Assert the browser's native constraint-validation bubble on `fieldKey`
+   * reads exactly `message` (e.g. "Please fill out this field." for a blank
+   * required field, or the type-mismatch text for a malformed e-mail).
+   * Reads `element.validationMessage` off the real input — the same string
+   * the browser would show in its bubble — rather than any page-rendered
+   * text, because automationexercise.com renders none for these cases.
+   *
+   * `fieldKey` is a .feature data-table key; `fieldByKey()` maps it (plus the
+   * two signup-block keys "name" / "email") to its Locator.
+   */
+  async expectFieldValidationMessage(fieldKey: string, message: string): Promise<void> {
+    const key = fieldKey.trim();
+    const loc = this.fieldByKey()[key];
+    if (!loc) {
+      throw new Error(`no locator mapped for field key "${key}" in RegistrationPage.fieldByKey()`);
+    }
+    const normalised = message.trim().replace(/\s+/g, ' ');
+    await expect
+      .poll(
+        () =>
+          loc.evaluate(
+            (el) => (el as HTMLInputElement | HTMLSelectElement).validationMessage ?? '',
+          ),
+        {
+          timeout: UI_TIMEOUT,
+          message: `waiting for ${key}.validationMessage === ${JSON.stringify(normalised)}`,
+        },
+      )
+      .toBe(normalised);
+  }
+
+  /**
+   * .feature data-table key -> the input/select Locator on either the signup
+   * block or the account-information form. Used by the blank-field submit
+   * method and the validation-message assertion so both address fields by
+   * the exact label the .feature uses.
+   */
+  private fieldByKey(): Record<string, Locator> {
+    return {
+      name: this.fName,
+      email: this.fEmail,
+      password: this.fPassword,
+      'first name': this.fFirstName,
+      'last name': this.fLastName,
+      company: this.fCompany,
+      address: this.fAddress,
+      'address 2': this.fAddress2,
+      country: this.fCountry,
+      state: this.fState,
+      city: this.fCity,
+      zipcode: this.fZipcode,
+      'mobile number': this.fMobileNumber,
+    };
   }
 
   /** Step 3 — the "Continue" link on /account_created. */

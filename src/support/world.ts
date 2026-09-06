@@ -60,6 +60,27 @@ export class PlaywrightWorld extends World {
    *  literal. Add more fields as scenarios need. */
   lastSignupName?: string;
 
+  /** The e-mail the "starts a signup in the … block" step actually submitted
+   *  this scenario. A positive scenario gets a fresh `uniqueEmail()`; a
+   *  negative scenario submits its literal bad / blank value; the
+   *  duplicate-e-mail scenario submits `forcedSignupEmail` (below). Read back
+   *  by assertions so they check what was sent, never a literal. */
+  lastSignupEmail?: string;
+
+  /** Set ONLY by the name-scoped `Before` hook for the "already has an
+   *  account" scenario: the hook first registers a real account via
+   *  `uniqueEmail()`, logs out, and pins that exact address here. The signup
+   *  `When` step then submits this verbatim so the "Email Address already
+   *  exist!" path is genuinely exercised. Undefined for every other
+   *  scenario. */
+  forcedSignupEmail?: string;
+
+  /** The account-information field the "…with {string} left blank" step was
+   *  told to leave empty (e.g. "password", "mobile number"). The later
+   *  assertion reads this back to check the browser flagged the field that
+   *  was actually blanked, not a literal from the .feature. */
+  lastBlankField?: string;
+
   /** Every value the "submits the account information form" step actually
    *  put on the page, captured verbatim from the data table (a blank cell
    *  stays an empty string). Later Then steps read these back so an
