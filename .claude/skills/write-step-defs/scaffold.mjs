@@ -350,6 +350,19 @@ import { Browser, BrowserContext, Page, chromium, firefox, webkit${testIdAttr ? 
 import { PageObjects, buildPageObjects } from '../pages/index.js';
 ${testIdLine}
 
+/** Engine selected per run with \`BROWSER=<name>\` (default \`chromium\`). */
+export type BrowserName = 'chromium' | 'firefox' | 'webkit';
+const SUPPORTED_BROWSERS: readonly BrowserName[] = ['chromium', 'firefox', 'webkit'];
+
+function resolveBrowserName(raw: string | undefined): BrowserName {
+  if (raw === undefined || raw === '') return 'chromium';
+  const name = raw.trim().toLowerCase();
+  if ((SUPPORTED_BROWSERS as readonly string[]).includes(name)) return name as BrowserName;
+  throw new Error(
+    \`BROWSER="\${raw}" is not supported. Use one of: \${SUPPORTED_BROWSERS.join(', ')}.\`,
+  );
+}
+
 /** Custom Cucumber World — one instance per scenario. */
 export class PlaywrightWorld extends World {
   browser!: Browser;
@@ -358,7 +371,7 @@ export class PlaywrightWorld extends World {
   pages!: PageObjects;
 
   readonly baseUrl: string;
-  readonly browserName: 'chromium' | 'firefox' | 'webkit';
+  readonly browserName: BrowserName;
   readonly headless: boolean;
 
   /** Scratch state shared between the steps of one scenario. Set in a When,
@@ -373,7 +386,7 @@ export class PlaywrightWorld extends World {
   constructor(options: IWorldOptions) {
     super(options);
     this.baseUrl = process.env.BASE_URL ?? ${base ? JSON.stringify(base) : `'http://localhost:3000'`};
-    this.browserName = (process.env.BROWSER as 'chromium' | 'firefox' | 'webkit') ?? 'chromium';
+    this.browserName = resolveBrowserName(process.env.BROWSER);
     this.headless = process.env.HEADED ? false : true;
   }
 
@@ -489,19 +502,35 @@ function cucumberJs() {
   const s = relative(process.cwd(), STEPS_DIR).replace(/\\/g, '/');
   const su = relative(process.cwd(), SUPPORT_DIR).replace(/\\/g, '/');
   const f = relative(process.cwd(), FEATURES_DIR).replace(/\\/g, '/');
-  return `// Cucumber profiles. Run:  npm run cucumberTs
-// One scenario:  npm run cucumberTs -- --name "<name>"
-// CI profile:    npm run cucumberTs -- --profile ci
+  return `// Cucumber profiles.
+//   npm run cucumberTs                          all scenarios, chromium
+//   BROWSER=firefox PARALLEL=0 npm run cucumberTs -- --name "<n>"   one, serial
+//   npm run cucumberTs -- --profile ci          + retry, junit report
+//
+// PARALLEL (default 2, 0 = serial) sets worker count on both profiles.
+// Report paths are keyed by BROWSER so concurrent engines don't clobber
+// each other's reports/<browser>/*.
+const PARALLEL = Number.parseInt(process.env.PARALLEL ?? '2', 10);
+const parallel = Number.isFinite(PARALLEL) && PARALLEL >= 0 ? PARALLEL : 2;
+
+const BROWSER = (process.env.BROWSER ?? 'chromium').trim().toLowerCase() || 'chromium';
+const reportDir = \`reports/\${BROWSER}\`;
+
 const common = {
   import: ['${su}/**/*.ts', '${s}/**/*.ts'],
   paths: ['${f}/**/*.feature'],
-  format: ['summary', 'progress-bar', 'html:reports/cucumber-report.html'],
+  format: ['summary', 'progress-bar', \`html:\${reportDir}/cucumber-report.html\`],
   formatOptions: { snippetInterface: 'async-await' },
   publishQuiet: true,
+  parallel,
 };
 module.exports = {
   default: common,
-  ci: { ...common, format: ['summary', 'html:reports/cucumber-report.html', 'junit:reports/junit.xml'], retry: 1, parallel: 2 },
+  ci: {
+    ...common,
+    format: ['summary', \`html:\${reportDir}/cucumber-report.html\`, \`junit:\${reportDir}/junit.xml\`],
+    retry: 1,
+  },
 };
 `;
 }
@@ -887,4 +916,6 @@ if (allMissing.length) {
   console.log('\nExplore those on the live site, add them to selmap.json, delete the affected');
   console.log('*.page.ts, and re-run --emit.');
 }
-console.log('\nNext:  npm run cucumberTs -- --dry-run   then   npm run cucumberTs\n');
+console.log('\nNext:  npm run cucumberTs -- --dry-run   then   npm run cucumberTs');
+console.log('       cross-browser:  npm run test:firefox / test:webkit / test:all');
+console.log('       serial debug:   PARALLEL=0 npm run cucumberTs -- --name "<scenario>"\n');

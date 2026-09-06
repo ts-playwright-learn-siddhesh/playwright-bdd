@@ -8,7 +8,10 @@ import colors from '@colors/colors/safe';
  *
  * - Console transport: human-readable, colorized via @colors/colors SAFE mode
  *   (no String.prototype pollution). Auto-disables color on non-TTY output.
- * - File transport: one JSON-lines file per run at `<LOG_DIR>/run-<iso>.log`.
+ * - File transport: one JSON-lines file per run at
+ *   `<LOG_DIR>/run-<iso>-<browser>[-w<worker>].log` — the browser and worker
+ *   tags keep concurrent cross-browser / parallel-worker runs from sharing a
+ *   file.
  * - Level: `LOG_LEVEL` env wins; otherwise `info` under CI, `debug` locally.
  * - `scenarioLogger(name)` returns a child logger that tags every line with
  *   the scenario name — wired into the Cucumber World as `this.log`.
@@ -69,7 +72,13 @@ function buildTransports(runId: string): winston.transport[] {
   ];
 }
 
-const runId = new Date().toISOString().replace(/[:.]/g, '-');
+// CUCUMBER_WORKER_ID is set only in parallel workers; absent for a serial run.
+const browserTag = (process.env.BROWSER ?? 'chromium').trim().toLowerCase() || 'chromium';
+const workerId = process.env.CUCUMBER_WORKER_ID;
+const runId =
+  new Date().toISOString().replace(/[:.]/g, '-') +
+  `-${browserTag}` +
+  (workerId !== undefined ? `-w${workerId}` : '');
 
 // format.errors({ stack: true }) MUST be at the top-level createLogger call,
 // not per-transport — per-transport-only placement silently drops the

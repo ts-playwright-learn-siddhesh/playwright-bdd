@@ -73,6 +73,11 @@ node .claude/skills/run-tests-triage/driver.mjs -- --name "Signing in with valid
 The driver never modifies project source. It only runs the suite and
 writes under `.claude/.scratch/`.
 
+The driver inherits `BROWSER` / `PARALLEL` from the environment — it does
+not set them. Triage a single engine with `BROWSER=firefox node
+.claude/skills/run-tests-triage/driver.mjs`, or serial with `PARALLEL=0`.
+Default (unset) is chromium, `parallel: 2` from `cucumber.js`.
+
 ## Run (human path)
 
 Run whatever `package.json` script the project uses for the BDD suite

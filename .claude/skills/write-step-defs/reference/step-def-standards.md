@@ -36,9 +36,15 @@ src/
 cucumber.js            profiles: default + ci (paths, import globs, formatters)
 ```
 
-Run with `npm run cucumberTs` (reads `cucumber.js`). A single scenario:
-`npm run cucumberTs -- --name "Sign in with valid credentials"`.
-CI profile (retry + parallel + junit): `npm run cucumberTs -- --profile ci`.
+Run with `npm run cucumberTs` (reads `cucumber.js`, chromium). A single
+scenario: `npm run cucumberTs -- --name "Sign in with valid credentials"`.
+CI profile (retry + junit): `npm run cucumberTs -- --profile ci`.
+
+Cross-browser: `npm run test:firefox` / `test:webkit` / `test:all` /
+`test:all:parallel`. Worker count: `PARALLEL=N` (default 2, `0` = serial —
+use for debugging a single failure). `BROWSER` is validated in the World —
+an unknown value throws. Reports/logs are keyed by browser
+(`reports/<browser>/`, `logs/run-<iso>-<browser>[-w<worker>].log`).
 
 > On Windows / Git Bash always invoke via
 > `node --import tsx node_modules/@cucumber/cucumber/bin/cucumber.js …`.
@@ -52,7 +58,9 @@ CI profile (retry + parallel + junit): `npm run cucumberTs -- --profile ci`.
 - Holds `browser`, `context`, `page`, and `pages` (the Page Object
   registry), plus a read-only `baseUrl` (`process.env.BASE_URL` wins, else
   the value baked in at scaffold time).
-- `BROWSER=firefox|webkit` switches engine; `HEADED=1` shows the browser.
+- `BROWSER=chromium|firefox|webkit` switches engine (validated — an unknown
+  value throws at World construction, no silent chromium fallback);
+  `HEADED=1` shows the browser.
 - `init()` launches + opens a context/page and builds the Page Objects;
   `destroy()` closes everything. Both are called from hooks, never a step.
 - `setWorldConstructor(PlaywrightWorld)` at the bottom.
@@ -63,8 +71,10 @@ CI profile (retry + parallel + junit): `npm run cucumberTs -- --profile ci`.
 - `Before` → `this.init()`. `After` → on `Status.FAILED`, `this.attach(png)`
   a full-page screenshot, then `this.destroy()` **always**.
 - Tag-scoped hooks when needed: `Before({ tags: '@auth' }, …)`.
-  Name-scoped for a one-scenario precondition:
-  `Before({ name: 'exact scenario name' }, …)`.
+  For a one-scenario precondition: **`Before({ name })` does NOT scope a
+  hook** — `name` only *labels* it, the hook still runs for every scenario.
+  Use a plain `Before(fn)` that early-returns unless
+  `scenario.pickle?.name === '<exact name>'`.
 - No `When`/`Then` logic in hooks. Setup/teardown only — the **one**
   allowed exception is a precondition hook that must create data the
   feature depends on but never creates itself (see §4, "Unique test
@@ -164,13 +174,15 @@ literal for a fresh value at run time:
   should). The resolved value goes on the World (`this.lastSignupEmail`)
   so later steps (login, delete) reuse it.
 - A scenario that specifically needs a value that **already exists**
-  (a "duplicate e-mail is rejected" case) gets a **name-scoped `Before`
-  hook** in `support/<feature>.hooks.ts` that creates the record through
-  the real UI and pins its value on the World
-  (`this.forcedSignupEmail = …`); the signup step then submits that exact
-  value. This hook is the one legitimate place to drive the site outside a
-  step. It runs after `hooks.ts`'s `Before` (`init()`), which is
-  guaranteed by file load order (`hooks.ts` < `<feature>.hooks.ts`).
+  (a "duplicate e-mail is rejected" case) gets a **`Before` hook** in
+  `support/<feature>.hooks.ts` that creates the record through the real UI
+  and pins its value on the World (`this.forcedSignupEmail = …`); the
+  signup step then submits that exact value. Since `Before({ name })` does
+  not scope (above), it's a plain `Before(fn)` whose first line is
+  `if (scenario.pickle?.name !== '<exact name>') return;`. This hook is the
+  one legitimate place to drive the site outside a step. It runs after
+  `hooks.ts`'s `Before` (`init()`), guaranteed by file load order
+  (`global.hooks.ts` / `hooks.ts` sorts before `<feature>.hooks.ts`).
 
 This is not "changing the assertion to hide a bug" — the site genuinely
 does reject a re-used e-mail; the test just stops depending on a
