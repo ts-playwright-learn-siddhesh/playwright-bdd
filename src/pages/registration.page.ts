@@ -94,22 +94,54 @@ export class RegistrationPage extends BasePage {
    * dismiss it, wait out the frame's mount window, dismiss again, and pass
    * a short `trial`/retry click: if an ad frame still intercepts, Playwright
    * re-attempts rather than failing on the first obscured hit.
+   *
+   * "Already navigated" tolerance: under heavy parallel load the site can be
+   * slow enough that the FIRST click succeeds and its navigation is in
+   * flight, but `click()` still rejects (element detached mid-action). The
+   * old retry then re-ran `scrollIntoViewIfNeeded` against the stale element
+   * and timed out (30s) — surfacing a navigation success as a failure. So we
+   * snapshot the URL first, and if it changed (or the target went away)
+   * while we were clicking, we treat the click as done.
    */
   private async safeClick(target: Locator): Promise<void> {
+    const urlBefore = this.page.url();
     await this.dismissAdOverlay();
-    await target.scrollIntoViewIfNeeded();
+    await this.safeScrollIntoView(target);
     // give a late-mounting vignette frame a chance to appear, then clear it
     await this.page.waitForTimeout(400);
     await this.dismissAdOverlay();
     try {
       await target.click({ timeout: 5_000 });
-    } catch {
+    } catch (err) {
+      if (await this.clickAlreadyLanded(target, urlBefore)) return;
       // an ad frame likely mounted between the dismiss and the click —
       // clear it once more and retry, forcing past any residual overlay
       await this.dismissAdOverlay();
-      await target.scrollIntoViewIfNeeded();
-      await target.click({ timeout: 10_000 });
+      await this.safeScrollIntoView(target);
+      try {
+        await target.click({ timeout: 10_000 });
+      } catch (err2) {
+        if (await this.clickAlreadyLanded(target, urlBefore)) return;
+        throw err2 instanceof Error ? err2 : (err as Error);
+      }
     }
+  }
+
+  /** `scrollIntoViewIfNeeded` on an element the page has already navigated
+   *  past hangs for the full 30s action timeout. Cap it low and swallow a
+   *  timeout — the click itself still waits for actionability. */
+  private async safeScrollIntoView(target: Locator): Promise<void> {
+    await target.scrollIntoViewIfNeeded({ timeout: 3_000 }).catch(() => {
+      /* element gone / page navigating — the click's own waits cover it */
+    });
+  }
+
+  /** True when the click can be considered to have taken effect already:
+   *  the URL moved off `urlBefore`, or the target is no longer visible
+   *  (form replaced by the next page). */
+  private async clickAlreadyLanded(target: Locator, urlBefore: string): Promise<boolean> {
+    if (this.page.url() !== urlBefore) return true;
+    return !(await target.isVisible().catch(() => false));
   }
 
   /**

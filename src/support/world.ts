@@ -88,6 +88,32 @@ export class PlaywrightWorld extends World {
    *  scenario. */
   forcedSignupEmail?: string;
 
+  /** The real credential pair seeded by the login.feature `Before` hook
+   *  (src/support/hooks/login.hooks.ts). That hook registers a brand-new
+   *  account through the live signup UI, logs it out, and pins its exact
+   *  e-mail / password / display name here. The login `When` step resolves
+   *  the feature's "the registered account email/password" placeholder cells
+   *  to these, and the "Logged in as" assertion checks `loginAccountName`.
+   *  Undefined for scenarios outside login.feature. */
+  loginAccountEmail?: string;
+  loginAccountPassword?: string;
+  loginAccountName?: string;
+
+  /** The email/password actually submitted by the login `When` step this
+   *  scenario (a seeded value, a literal bad value, or a blank cell). Read
+   *  back by later Then steps so an assertion checks what was sent.
+   *  `lastLoginEmail` being defined is also the signal that the current
+   *  scenario is a login scenario (used to route the shared
+   *  "the message {string} is shown" step). */
+  lastLoginEmail?: string;
+  lastLoginPassword?: string;
+
+  /** The login field ("email" | "password") that a
+   *  "the <field> field is reported invalid for …" step asserted on. The
+   *  following shared "the message {string} is shown" step reads this to know
+   *  which input's HTML5 constraint bubble to check. */
+  lastLoginInvalidField?: 'email' | 'password';
+
   /** The account-information field the "…with {string} left blank" step was
    *  told to leave empty (e.g. "password", "mobile number"). The later
    *  assertion reads this back to check the browser flagged the field that

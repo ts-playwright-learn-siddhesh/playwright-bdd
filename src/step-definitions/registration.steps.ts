@@ -117,6 +117,27 @@ When(
 Then('the message {string} is shown', async function (this: PlaywrightWorld, message: string) {
   const reg = this.pages.registration;
 
+  // login.feature reuses this phrasing too. `lastLoginEmail` is set by the
+  // login `When` step, so its presence means this is a login scenario:
+  //   - a browser constraint bubble ("Please fill out this field." /
+  //     "Please include an '@' …") -> the HTML5 validity flag on whichever
+  //     login input the preceding "the <field> field is reported invalid …"
+  //     step pinned;
+  //   - anything else ("Your email or password is incorrect!") -> the site's
+  //     own red error <p> in the login block.
+  if (this.lastLoginEmail !== undefined) {
+    const login = this.pages.login;
+    if (/please (fill out this field|include an '@')/i.test(message)) {
+      const field = this.lastLoginInvalidField ?? 'email';
+      this.logger.info(`asserting login "${field}" reports validation message "${message}"`);
+      await login.expectFieldValidationMessage(field, message);
+      return;
+    }
+    this.logger.info(`asserting login-block error "${message}"`);
+    await login.expectLoginError(message);
+    return;
+  }
+
   // The feature reuses this phrasing for three different real-site outcomes.
   // Dispatch on what this scenario actually submitted:
   if (this.lastBlankField) {
@@ -174,6 +195,12 @@ Then(
     }
     if (page === 'Enter Account Information') {
       await this.pages.registration.expectStillOnAccountInfoPage();
+      return;
+    }
+    if (page === 'Login to your account') {
+      // login.feature — assert the browser stayed on /login with the login
+      // form still mounted (not navigated to home).
+      await this.pages.login.expectStillOnLoginPage();
       return;
     }
     await this.pages.registration.expectPage(page);
