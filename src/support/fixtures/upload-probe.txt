@@ -1,0 +1,5 @@
+Contact Us upload probe.
+
+A small text file attached by the Contact Us "file attached" scenario in
+src/features/contact-us.feature. The live site accepts it client-side and
+returns the same generic success box as a no-file submission.

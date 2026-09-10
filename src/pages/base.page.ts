@@ -11,6 +11,7 @@ export const PAGE_PATHS: Record<string, string> = {
   "Enter Account Information": "/signup",
   "Signup Login": "/login",
   "Login to your account": "/login",
+  "Contact Us": "/contact_us",
   "home": "/",
 };
 
