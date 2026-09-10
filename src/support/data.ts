@@ -1,4 +1,5 @@
 import { faker } from '@faker-js/faker';
+import { resolve } from 'node:path';
 
 /**
  * Run-time test data helpers.
@@ -28,4 +29,13 @@ export function personName(): { first: string; last: string; full: string } {
   const first = faker.person.firstName();
   const last = faker.person.lastName();
   return { first, last, full: `${first} ${last}` };
+}
+
+/** Absolute path to a fixture file under src/support/fixtures/. A .feature
+ *  data-table names an upload by bare filename (e.g. "upload-probe.txt");
+ *  the step resolves it here for Playwright's setInputFiles. Resolved from
+ *  the project root (process.cwd(), where the cucumber run is launched),
+ *  matching how src/support/logger.ts locates its logs dir. */
+export function fixturePath(name: string): string {
+  return resolve(process.cwd(), 'src/support/fixtures', name.trim());
 }
